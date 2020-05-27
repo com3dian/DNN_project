@@ -132,15 +132,12 @@ clean_index = np.array([(y_train_noisy[i,:]==y_train[i,:]).all() for i in range(
 # For tracking only, unused during training
 noisy_index = np.array([not i for i in clean_index])
 INCV_lr_callback = LearningRateScheduler(INCV_lr_schedule)
-
 # Define optimizer and compile model
 optimizer = optimizers.Adam(lr=INCV_lr_schedule(0), beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
 model = create_model(input_shape=input_shape, classes=n_classes, name='INCV_ResNet32', architecture='ResNet32')
 model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics = ['accuracy'])
 weights_initial = model.get_weights()
 # Print model architecture
-print('Architecture of INCV-model:')
-model.summary()
 
 ###################################################################
 
@@ -150,7 +147,7 @@ val_idx = np.array([True for i in range(n_train)])
 INCV_save_best = True
 pool_batch_idx = count_nearest_neighbour_graphs(data = x_train, 
                                             scale = 0.1, 
-                                            labels = list(range(pool_batch_size)), 
+                                            labels = ([0, 43, 51]), 
                                             pca_conponent =20)
 for i in pool_batch_idx:
     train_idx[i] = True
@@ -161,12 +158,10 @@ old_idx = pool_batch_idx
 
 ########################################################
 #搞
-
+weight_update = weights_initial#初始化网络
 for iter in range(1,INCV_iter+1):
     print('INCV iteration %d including first half and second half  of expansion. In total %d iterations.'
           %(iter,INCV_iter))
-    if len(old_labels) == x_train.shape[0]:
-        print('The Fruit Is Swelling')
     
     append_idx = np.array( count_nearest_neighbour_graphs(data = x_train, 
                                         scale = 0.06, 
@@ -176,18 +171,18 @@ for iter in range(1,INCV_iter+1):
     #
     
     Iter_train = len(append_idx) - len(old_idx)#扩张搞了多少
-    val_idx_int = np.array([append_idx[Iter_train+i] for i in range(Iter_train) if val_idx[i]]) # integer index
+    val_idx_int = np.array([append_idx[len(old_idx)+i] for i in range(Iter_train) if val_idx[i]]) # integer index
     #val_验证集
     np.random.shuffle(val_idx_int)
     n_val_half = int(len(val_idx_int)/2)
-    val1_idx = append_idx[val_idx_int[:n_val_half]] # integer index
-    val2_idx = append_idx[val_idx_int[n_val_half:]] # integer index
+    val1_idx = val_idx_int[:n_val_half] # integer index
+    val2_idx = val_idx_int[n_val_half:] # integer index
     #Train model on the first half of dataset
     First_half = True 
     print('Iteration ' + str(iter) + ' - first half')
     # reset weights
-    weight_update = weights_initial
-    model.set_weights(weights_update)
+    
+    model.set_weights(weights_initial)
     results = model.fit_generator(datagen.flow(np.concatenate([x_train[train_idx,:],x_train[val1_idx,:]]),
                                                   np.concatenate([y_train_noisy[train_idx,:],
                                                              y_train_noisy[val1_idx,:]]),
@@ -206,7 +201,7 @@ for iter in range(1,INCV_iter+1):
     # concatenate把这些鸡巴连起来
     # epochs是训练网络的迭代次数
     #
-    model.set_weights(weights_initial)  
+      
     y_pred = model.predict(x_train[val2_idx,:])
     cross_entropy = np.sum(-y_train_noisy[val2_idx,:]*np.log(y_pred+1e-8),axis=1)
     top_pred = np.argsort(y_pred, axis=1)[:,-Num_top:]
@@ -235,7 +230,7 @@ for iter in range(1,INCV_iter+1):
     First_half = False
     print('Iteration ' + str(iter) + ' - second half')
     # reset weights
-    model.set_weights(weights_update)
+    model.set_weights(weights_initial)
     results = model.fit_generator(datagen.flow(np.concatenate([x_train[train_idx,:],x_train[val2_idx,:]]), 
                                                   np.concatenate([y_train_noisy[train_idx,:],
                                                                                                                                              y_train_noisy[val2_idx,:]]),
@@ -276,6 +271,11 @@ for iter in range(1,INCV_iter+1):
     if iter==iter_save_best:
         #什么鸡巴
         INCV_save_best = False
-    weights_update = model.get_weight()
+    ####################
+    #更新集合
+    #更新参数
+    #还有啥没更新的
+    weights_initial = model.get_weights()
+    old_idx = list(append_idx[i] for i in range(len(append_idx)) if val_idx[i])
     
     
